@@ -1,0 +1,62 @@
+const mongoose = require('mongoose');
+const SiteSubmission = require('../models/SiteSubmission');
+const Website = require('../models/Website');
+const { asyncHandler } = require('../middleware/errorHandler');
+
+const resolveWebsiteId = async (websiteParam) => {
+  if (!websiteParam) return null;
+  if (mongoose.Types.ObjectId.isValid(websiteParam) && String(new mongoose.Types.ObjectId(websiteParam)) === websiteParam) {
+    return websiteParam;
+  }
+  const w = await Website.findOne({ slug: String(websiteParam).trim().toLowerCase() }).select('_id').lean();
+  return w ? w._id : null;
+};
+
+exports.list = asyncHandler(async (req, res) => {
+  const websiteId = await resolveWebsiteId(req.query.website);
+  if (!websiteId) {
+    return res.status(400).json({ success: false, message: 'Query "website" (id or slug) is required' });
+  }
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const skip = (page - 1) * limit;
+  const status = req.query.status ? String(req.query.status).trim().toLowerCase() : '';
+
+  const filter = { website: websiteId };
+  if (status && ['pending', 'approved', 'rejected'].includes(status)) filter.status = status;
+
+  const [items, total] = await Promise.all([
+    SiteSubmission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    SiteSubmission.countDocuments(filter),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: items,
+    pagination: { page, limit, total },
+  });
+});
+
+exports.getById = asyncHandler(async (req, res) => {
+  const item = await SiteSubmission.findById(req.params.id).lean();
+  if (!item) {
+    return res.status(404).json({ success: false, message: 'Submission not found' });
+  }
+  res.status(200).json({ success: true, data: item });
+});
+
+exports.updateStatus = asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  if (!status || !['pending', 'approved', 'rejected'].includes(String(status))) {
+    return res.status(400).json({ success: false, message: 'Valid status (pending, approved, rejected) is required' });
+  }
+  const item = await SiteSubmission.findByIdAndUpdate(
+    req.params.id,
+    { status: String(status) },
+    { new: true }
+  ).lean();
+  if (!item) {
+    return res.status(404).json({ success: false, message: 'Submission not found' });
+  }
+  res.status(200).json({ success: true, data: item });
+});
