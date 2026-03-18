@@ -63,6 +63,7 @@ const allowedOrigins = [
   env.CLIENT_URL,
   ...envAllowed,
   'https://ubiquitous-alfajores-f4baae.netlify.app',
+  'https://starlit-conkies-b6b727.netlify.app',
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ].filter(Boolean);
