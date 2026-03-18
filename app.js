@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const { validateEnv } = require('./utils/envValidator');
 const env = validateEnv({
   required: ['MONGO_URL', 'JWT_SECRET', 'PORT'],
-  optional: ['NODE_ENV', 'CLIENT_URL', 'JWT_EXPIRES_IN', 'DEFAULT_WEBSITE_SLUG'],
+  optional: ['NODE_ENV', 'CLIENT_URL', 'ALLOWED_ORIGINS', 'JWT_EXPIRES_IN', 'DEFAULT_WEBSITE_SLUG'],
   defaults: { NODE_ENV: 'development', PORT: 5000, DEFAULT_WEBSITE_SLUG: 'similaris' },
 });
 
@@ -55,7 +55,17 @@ app.set('trust proxy', 1);
 app.use(requestId);
 
 const isDev = env.NODE_ENV !== 'production';
-const allowedOrigins = [env.CLIENT_URL, 'http://localhost:3000', 'http://127.0.0.1:3000'].filter(Boolean);
+const envAllowed =
+  env.ALLOWED_ORIGINS && typeof env.ALLOWED_ORIGINS === 'string'
+    ? env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+const allowedOrigins = [
+  env.CLIENT_URL,
+  ...envAllowed,
+  'https://ubiquitous-alfajores-f4baae.netlify.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+].filter(Boolean);
 app.use(
   cors({
     origin: (origin, cb) => {
