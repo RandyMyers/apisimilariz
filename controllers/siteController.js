@@ -88,7 +88,7 @@ exports.getSponsoredByDomain = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
-/** GET /api/sites/:domain/similar — curated list if set; else same category + vote stats */
+/** GET /api/sites/:domain/similar — only admin-curated list (curatedSimilar); empty if none set */
 exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
   const mainSite = await findSiteBySlugOrDomain(req.websiteId, req.params.domain);
   if (!mainSite) {
@@ -110,15 +110,6 @@ exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
     }).lean();
     const byId = new Map(docs.map((s) => [String(s._id), s]));
     sites = curatedIds.map((id) => byId.get(String(id))).filter(Boolean);
-  } else {
-    sites = await Site.find({
-      website: req.websiteId,
-      category: mainSite.category,
-      domain: { $ne: mainDomain },
-    })
-      .sort({ userScore: -1, similarityScore: -1 })
-      .limit(limit * 2)
-      .lean();
   }
 
   const votes = await SimilarityVote.aggregate([
@@ -130,18 +121,10 @@ exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
     voteMap[v._id] = { averageRating: Math.round(v.avg * 10) / 10, voteCount: v.count };
   });
 
-  let withStats = sites.map((s) => ({
+  const withStats = sites.map((s) => ({
     ...s,
     similarityVoteStats: voteMap[s.domain] || null,
   }));
-  if (curatedIds.length === 0) {
-    withStats.sort((a, b) => {
-      const aAvg = (a.similarityVoteStats && a.similarityVoteStats.averageRating) || 0;
-      const bAvg = (b.similarityVoteStats && b.similarityVoteStats.averageRating) || 0;
-      if (bAvg !== aAvg) return bAvg - aAvg;
-      return (b.similarityScore || 0) - (a.similarityScore || 0);
-    });
-  }
   const sliced = withStats.slice(0, limit);
   const locale = req.locale || null;
   const data = locale

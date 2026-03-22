@@ -49,14 +49,21 @@ exports.list = asyncHandler(async (req, res) => {
   if (sortKey === 'domain') sort = { domain: 1 };
   if (sortKey === 'title') sort = { title: 1 };
 
-  const [sites, total] = await Promise.all([
+  const [sitesRaw, total] = await Promise.all([
     Site.find(filter).populate('website', 'name slug').sort(sort).skip(skip).limit(limit).lean(),
     Site.countDocuments(filter),
   ]);
 
+  /** List view: expose count only (full `curatedSimilar` is managed on Similar sites admin). */
+  const data = sitesRaw.map((s) => {
+    const { curatedSimilar, ...rest } = s;
+    const curatedCount = Array.isArray(curatedSimilar) ? curatedSimilar.length : 0;
+    return { ...rest, curatedCount };
+  });
+
   res.status(200).json({
     success: true,
-    data: sites,
+    data,
     pagination: { page, limit, total },
   });
 });
