@@ -2,6 +2,7 @@ const Website = require('../models/Website');
 const BlogPost = require('../models/BlogPost');
 const Site = require('../models/Site');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { DEFAULT_LOCALE_CODE, allLocaleCodes, pathPrefixForCode } = require('../config/siteLocales');
 
 const STATIC_PATHS = [
   '',
@@ -28,17 +29,28 @@ function escapeXml(s) {
     .replace(/'/g, '&apos;');
 }
 
+/**
+ * Sitemap must list every locale route the client serves (/sv/..., /fr/..., etc.),
+ * not only whatever is stored on Website.supportedLocales (often just en-US).
+ */
 function getLocalePathMap(website) {
-  const map = website.localePathMap && typeof website.localePathMap === 'object' ? website.localePathMap : {};
-  const defaultLocale = website.defaultLocale || 'en-US';
-  const supported = Array.isArray(website.supportedLocales) && website.supportedLocales.length
-    ? website.supportedLocales
-    : [defaultLocale];
-  const pathByLocale = { [defaultLocale]: '' };
-  supported.forEach((locale) => {
-    if (locale !== defaultLocale && map[locale] !== undefined) pathByLocale[locale] = String(map[locale]).trim();
-    else if (locale !== defaultLocale) pathByLocale[locale] = locale.split('-')[0].toLowerCase();
+  const custom = website.localePathMap && typeof website.localePathMap === 'object' ? website.localePathMap : {};
+  const defaultLocale = website.defaultLocale || DEFAULT_LOCALE_CODE;
+  const supported = [...allLocaleCodes];
+
+  const pathByLocale = {};
+  supported.forEach((code) => {
+    if (code === defaultLocale) {
+      pathByLocale[code] = '';
+      return;
+    }
+    if (custom[code] !== undefined && String(custom[code]).trim() !== '') {
+      pathByLocale[code] = String(custom[code]).trim().replace(/^\/+|\/+$/g, '');
+      return;
+    }
+    pathByLocale[code] = pathPrefixForCode(code);
   });
+
   return { pathByLocale, supported, defaultLocale };
 }
 
@@ -115,10 +127,11 @@ exports.getSitemap = asyncHandler(async (req, res) => {
   });
 
   // Site detail pages
-  const sites = await Site.find({ website: website._id }).select('domain updatedAt seo similarPageSeo').lean();
+  const sites = await Site.find({ website: website._id }).select('slug domain updatedAt seo similarPageSeo').lean();
   sites.forEach((site) => {
     const domain = site.domain || '';
     if (!domain) return;
+    const pathSeg = (site.slug || domain.replace(/\./g, '-')).toLowerCase();
     const lastmod = site.updatedAt ? new Date(site.updatedAt).toISOString().slice(0, 10) : lastmodIso;
 
     const seo = site.seo || {};
@@ -128,10 +141,10 @@ exports.getSitemap = asyncHandler(async (req, res) => {
       const pr = sm.priority != null ? String(sm.priority) : '0.7';
       supported.forEach((locale) => {
         const prefix = pathByLocale[locale] || '';
-        const loc = `${baseUrl}${prefix ? `/${prefix}` : ''}/site/${encodeURIComponent(domain)}`;
+        const loc = `${baseUrl}${prefix ? `/${prefix}` : ''}/site/${encodeURIComponent(pathSeg)}`;
         const links = supported.map((locCode) => {
           const p = pathByLocale[locCode] || '';
-          const href = `${baseUrl}${p ? `/${p}` : ''}/site/${encodeURIComponent(domain)}`;
+          const href = `${baseUrl}${p ? `/${p}` : ''}/site/${encodeURIComponent(pathSeg)}`;
           const hreflang = locCode === defaultLocale ? 'x-default' : locCode.replace('_', '-');
           return `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(href)}"/>`;
         });
@@ -146,10 +159,10 @@ exports.getSitemap = asyncHandler(async (req, res) => {
     const prSim = simSm.priority != null ? String(simSm.priority) : '0.65';
     supported.forEach((locale) => {
       const prefix = pathByLocale[locale] || '';
-      const loc = `${baseUrl}${prefix ? `/${prefix}` : ''}/similar/${encodeURIComponent(domain)}`;
+      const loc = `${baseUrl}${prefix ? `/${prefix}` : ''}/similar/${encodeURIComponent(pathSeg)}`;
       const links = supported.map((locCode) => {
         const p = pathByLocale[locCode] || '';
-        const href = `${baseUrl}${p ? `/${p}` : ''}/similar/${encodeURIComponent(domain)}`;
+        const href = `${baseUrl}${p ? `/${p}` : ''}/similar/${encodeURIComponent(pathSeg)}`;
         const hreflang = locCode === defaultLocale ? 'x-default' : locCode.replace('_', '-');
         return `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(href)}"/>`;
       });

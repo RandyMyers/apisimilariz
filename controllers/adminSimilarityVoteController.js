@@ -12,18 +12,19 @@ const resolveWebsiteId = async (websiteParam) => {
   return w ? w._id : null;
 };
 
-/** GET /api/admin/similarity-votes - list votes (query: website required, mainDomain optional) */
+/** GET /api/admin/similarity-votes — website optional; mainDomain optional */
 exports.list = asyncHandler(async (req, res) => {
-  const websiteId = await resolveWebsiteId(req.query.website);
-  if (!websiteId) {
-    return res.status(400).json({ success: false, message: 'Query "website" (id or slug) is required' });
+  const websiteParam = req.query.website;
+  const websiteId = websiteParam ? await resolveWebsiteId(websiteParam) : null;
+  if (websiteParam && !websiteId) {
+    return res.status(400).json({ success: false, message: 'Invalid website (id or slug)' });
   }
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const skip = (page - 1) * limit;
   const mainDomain = req.query.mainDomain ? String(req.query.mainDomain).trim().toLowerCase() : '';
 
-  const filter = { website: websiteId };
+  const filter = { ...(websiteId ? { website: websiteId } : {}) };
   if (mainDomain) filter.mainDomain = new RegExp(mainDomain, 'i');
 
   const [items, total] = await Promise.all([
@@ -32,6 +33,7 @@ exports.list = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate('user', 'name email')
+      .populate('website', 'name slug')
       .lean(),
     SimilarityVote.countDocuments(filter),
   ]);
@@ -43,6 +45,10 @@ exports.list = asyncHandler(async (req, res) => {
     rating: v.rating,
     reason: v.reason || null,
     createdAt: v.createdAt,
+    website:
+      v.website && typeof v.website === 'object' && (v.website.name || v.website.slug)
+        ? { name: v.website.name, slug: v.website.slug }
+        : null,
     voter: v.user ? { name: v.user.name, email: v.user.email } : null,
     anonymousInfo: !v.user && v.ip ? { ip: v.ip, hasUserAgent: !!v.userAgent } : null,
   }));

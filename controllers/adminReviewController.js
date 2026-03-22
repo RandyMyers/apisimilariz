@@ -29,20 +29,21 @@ async function recalcSiteStats(websiteId, domain) {
 }
 
 exports.list = asyncHandler(async (req, res) => {
-  const websiteId = await resolveWebsiteId(req.query.website);
-  if (!websiteId) {
-    return res.status(400).json({ success: false, message: 'Query "website" (id or slug) is required' });
+  const websiteParam = req.query.website;
+  const websiteId = websiteParam ? await resolveWebsiteId(websiteParam) : null;
+  if (websiteParam && !websiteId) {
+    return res.status(400).json({ success: false, message: 'Invalid website (id or slug)' });
   }
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const skip = (page - 1) * limit;
   const domain = req.query.domain ? String(req.query.domain).trim().toLowerCase() : '';
 
-  const filter = { website: websiteId };
+  const filter = { ...(websiteId ? { website: websiteId } : {}) };
   if (domain) filter.domain = new RegExp(domain, 'i');
 
   const [items, total] = await Promise.all([
-    Review.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Review.find(filter).populate('website', 'name slug').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     Review.countDocuments(filter),
   ]);
 

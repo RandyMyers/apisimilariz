@@ -13,18 +13,19 @@ const resolveWebsiteId = async (websiteParam) => {
 };
 
 exports.list = asyncHandler(async (req, res) => {
-  const websiteId = await resolveWebsiteId(req.query.website);
-  if (!websiteId) {
-    return res.status(400).json({ success: false, message: 'Query "website" (id or slug) is required' });
+  const websiteParam = req.query.website;
+  const websiteId = websiteParam ? await resolveWebsiteId(websiteParam) : null;
+  if (websiteParam && !websiteId) {
+    return res.status(400).json({ success: false, message: 'Invalid website (id or slug)' });
   }
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const skip = (page - 1) * limit;
 
-  const filter = { website: websiteId };
+  const filter = websiteId ? { website: websiteId } : {};
 
   const [items, total] = await Promise.all([
-    NewsletterSubscription.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    NewsletterSubscription.find(filter).populate('website', 'name slug').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     NewsletterSubscription.countDocuments(filter),
   ]);
 

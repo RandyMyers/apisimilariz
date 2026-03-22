@@ -25,6 +25,13 @@ const siteSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
   },
+  /** URL segment for /site/:slug and /similar/:slug (e.g. stripe-com). */
+  slug: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    match: [/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Slug must be lowercase letters, numbers, and hyphens'],
+  },
   title: {
     type: String,
     required: [true, 'Title is required'],
@@ -98,17 +105,37 @@ const siteSchema = new mongoose.Schema({
     of: siteI18nSchema,
     default: () => new Map(),
   },
+  /** Manual list for /similar/:slug — when non-empty, overrides category-based similar sites. */
+  curatedSimilar: {
+    type: [
+      {
+        site: { type: mongoose.Schema.Types.ObjectId, ref: 'Site', required: true },
+        sortOrder: { type: Number, default: 0 },
+      },
+    ],
+    default: [],
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
 
 siteSchema.index({ website: 1, domain: 1 }, { unique: true });
+siteSchema.index({ website: 1, slug: 1 }, { unique: true, sparse: true });
 siteSchema.index({ website: 1, category: 1 });
 siteSchema.index({ website: 1, userScore: -1, similarityScore: -1 });
 siteSchema.index({ website: 1, title: 'text', description: 'text', tags: 'text' });
 
-siteSchema.pre('save', function (next) {
+siteSchema.pre('save', async function (next) {
   this.updatedAt = Date.now();
+  if (!this.slug && this.domain) {
+    const { domainToSlug, uniqueSlugForWebsite } = require('../utils/siteSlug');
+    const base = domainToSlug(this.domain);
+    try {
+      this.slug = await uniqueSlugForWebsite(this.website, base, this.isNew ? null : this._id);
+    } catch (e) {
+      return next(e);
+    }
+  }
   next();
 });
 

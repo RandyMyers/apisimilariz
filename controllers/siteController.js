@@ -3,6 +3,7 @@ const SponsoredItem = require('../models/SponsoredItem');
 const SimilarityVote = require('../models/SimilarityVote');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { applyI18n } = require('../utils/i18nMerge');
+const { findSiteBySlugOrDomain } = require('../utils/siteSlug');
 
 const SITE_I18N_FIELDS = ['title', 'description', 'longDescription', 'features'];
 const SITE_I18N_NESTED = ['seo', 'similarPageSeo'];
@@ -21,6 +22,7 @@ exports.list = asyncHandler(async (req, res) => {
       { title: new RegExp(q.trim(), 'i') },
       { description: new RegExp(q.trim(), 'i') },
       { domain: new RegExp(q.trim(), 'i') },
+      { slug: new RegExp(q.trim(), 'i') },
       { tags: new RegExp(q.trim(), 'i') },
       { category: new RegExp(q.trim(), 'i') },
     ];
@@ -47,8 +49,7 @@ exports.list = asyncHandler(async (req, res) => {
 });
 
 exports.getByDomain = asyncHandler(async (req, res) => {
-  const domain = (req.params.domain || '').toLowerCase().trim();
-  const site = await Site.findOne({ website: req.websiteId, domain }).lean();
+  const site = await findSiteBySlugOrDomain(req.websiteId, req.params.domain);
   if (!site) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
@@ -74,11 +75,11 @@ exports.getCategories = asyncHandler(async (req, res) => {
 });
 
 exports.getSponsoredByDomain = asyncHandler(async (req, res) => {
-  const domain = (req.params.domain || '').toLowerCase().trim();
-  const site = await Site.findOne({ website: req.websiteId, domain }).lean();
+  const site = await findSiteBySlugOrDomain(req.websiteId, req.params.domain);
   if (!site) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
+  const domain = site.domain;
   const items = await SponsoredItem.find({ website: req.websiteId, domain }).lean();
   const locale = req.locale || null;
   const data = locale
@@ -87,22 +88,38 @@ exports.getSponsoredByDomain = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
-/** GET /api/sites/:domain/similar - sites in same category with similarity vote stats, sorted by vote average (alternative rank) */
+/** GET /api/sites/:domain/similar — curated list if set; else same category + vote stats */
 exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
-  const mainDomain = (req.params.domain || '').toLowerCase().trim();
-  const mainSite = await Site.findOne({ website: req.websiteId, domain: mainDomain }).lean();
+  const mainSite = await findSiteBySlugOrDomain(req.websiteId, req.params.domain);
   if (!mainSite) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
+  const mainDomain = mainSite.domain;
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 12));
-  const sites = await Site.find({
-    website: req.websiteId,
-    category: mainSite.category,
-    domain: { $ne: mainDomain },
-  })
-    .sort({ userScore: -1, similarityScore: -1 })
-    .limit(limit * 2)
-    .lean();
+
+  const raw = mainSite.curatedSimilar || [];
+  const curatedSorted = [...raw].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  const curatedIds = curatedSorted.map((x) => x.site).filter(Boolean);
+
+  let sites = [];
+  if (curatedIds.length > 0) {
+    const docs = await Site.find({
+      _id: { $in: curatedIds },
+      website: req.websiteId,
+      domain: { $ne: mainDomain },
+    }).lean();
+    const byId = new Map(docs.map((s) => [String(s._id), s]));
+    sites = curatedIds.map((id) => byId.get(String(id))).filter(Boolean);
+  } else {
+    sites = await Site.find({
+      website: req.websiteId,
+      category: mainSite.category,
+      domain: { $ne: mainDomain },
+    })
+      .sort({ userScore: -1, similarityScore: -1 })
+      .limit(limit * 2)
+      .lean();
+  }
 
   const votes = await SimilarityVote.aggregate([
     { $match: { website: req.websiteId, mainDomain } },
@@ -113,40 +130,49 @@ exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
     voteMap[v._id] = { averageRating: Math.round(v.avg * 10) / 10, voteCount: v.count };
   });
 
-  const withStats = sites.map((s) => ({
+  let withStats = sites.map((s) => ({
     ...s,
     similarityVoteStats: voteMap[s.domain] || null,
   }));
-  withStats.sort((a, b) => {
-    const aAvg = (a.similarityVoteStats && a.similarityVoteStats.averageRating) || 0;
-    const bAvg = (b.similarityVoteStats && b.similarityVoteStats.averageRating) || 0;
-    if (bAvg !== aAvg) return bAvg - aAvg;
-    return (b.similarityScore || 0) - (a.similarityScore || 0);
-  });
-  const data = withStats.slice(0, limit);
+  if (curatedIds.length === 0) {
+    withStats.sort((a, b) => {
+      const aAvg = (a.similarityVoteStats && a.similarityVoteStats.averageRating) || 0;
+      const bAvg = (b.similarityVoteStats && b.similarityVoteStats.averageRating) || 0;
+      if (bAvg !== aAvg) return bAvg - aAvg;
+      return (b.similarityScore || 0) - (a.similarityScore || 0);
+    });
+  }
+  const sliced = withStats.slice(0, limit);
+  const locale = req.locale || null;
+  const data = locale
+    ? sliced.map((s) => applyI18n(s, locale, SITE_I18N_FIELDS, SITE_I18N_NESTED))
+    : sliced.map((s) => ({ ...s, i18n: undefined }));
   res.status(200).json({ success: true, data });
 });
 
 /** POST /api/sites/:domain/similarity-vote - rate how similar alternativeDomain is to main domain. Auth optional (we store user if logged in). */
 exports.submitSimilarityVote = asyncHandler(async (req, res) => {
-  const mainDomain = (req.params.domain || '').toLowerCase().trim();
-  const { alternativeDomain: rawAlt, rating, reason: rawReason } = req.body;
-  const alternativeDomain = (rawAlt || '').toLowerCase().trim();
-  const reason = typeof rawReason === 'string' ? rawReason.trim().slice(0, 500) : '';
-  if (!alternativeDomain) {
-    return res.status(400).json({ success: false, message: 'alternativeDomain is required' });
+  const mainSiteDoc = await findSiteBySlugOrDomain(req.websiteId, req.params.domain);
+  if (!mainSiteDoc) {
+    return res.status(404).json({ success: false, message: 'Main site not found' });
   }
+  const mainDomain = mainSiteDoc.domain;
+  const { alternativeDomain: rawAlt, rating, reason: rawReason } = req.body;
+  let alternativeDomain = (rawAlt || '').toLowerCase().trim();
+  const reason = typeof rawReason === 'string' ? rawReason.trim().slice(0, 500) : '';
   const r = Number(rating);
   if (!Number.isFinite(r) || r < 1 || r > 5) {
     return res.status(400).json({ success: false, message: 'rating must be between 1 and 5' });
+  }
+  const altBySlug = await findSiteBySlugOrDomain(req.websiteId, alternativeDomain);
+  if (altBySlug) alternativeDomain = altBySlug.domain;
+  if (!alternativeDomain) {
+    return res.status(400).json({ success: false, message: 'alternativeDomain is required' });
   }
   const [mainSite, altSite] = await Promise.all([
     Site.findOne({ website: req.websiteId, domain: mainDomain }),
     Site.findOne({ website: req.websiteId, domain: alternativeDomain }),
   ]);
-  if (!mainSite) {
-    return res.status(404).json({ success: false, message: 'Main site not found' });
-  }
   if (!altSite) {
     return res.status(404).json({ success: false, message: 'Alternative site not found' });
   }

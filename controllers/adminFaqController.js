@@ -13,11 +13,13 @@ const resolveWebsiteId = async (websiteParam) => {
 };
 
 exports.list = asyncHandler(async (req, res) => {
-  const websiteId = await resolveWebsiteId(req.query.website);
-  if (!websiteId) {
-    return res.status(400).json({ success: false, message: 'Query "website" (id or slug) is required' });
+  const websiteParam = req.query.website;
+  const websiteId = websiteParam ? await resolveWebsiteId(websiteParam) : null;
+  if (websiteParam && !websiteId) {
+    return res.status(400).json({ success: false, message: 'Invalid website (id or slug)' });
   }
-  const items = await FAQ.find({ website: websiteId }).sort({ order: 1, createdAt: 1 }).lean();
+  const filter = websiteId ? { website: websiteId } : {};
+  const items = await FAQ.find(filter).populate('website', 'name slug').sort({ order: 1, createdAt: 1 }).lean();
   res.status(200).json({ success: true, data: items });
 });
 

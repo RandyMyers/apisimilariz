@@ -5,6 +5,21 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 const Website = require('../models/Website');
 const Site = require('../models/Site');
+const { allLocaleCodes } = require('../config/siteLocales');
+const { domainToSlug, uniqueSlugForWebsite } = require('../utils/siteSlug');
+
+async function ensureSiteSlugs() {
+  const missing = await Site.find({
+    $or: [{ slug: { $exists: false } }, { slug: null }, { slug: '' }],
+  })
+    .select('_id website domain')
+    .lean();
+  for (const row of missing) {
+    const slug = await uniqueSlugForWebsite(row.website, domainToSlug(row.domain), row._id);
+    await Site.updateOne({ _id: row._id }, { $set: { slug } });
+  }
+  if (missing.length) console.log(`Backfilled slug on ${missing.length} site(s).`);
+}
 
 const DEFAULT_SLUG = process.env.DEFAULT_WEBSITE_SLUG || 'similaris';
 const DEFAULT_BASE_URL = (process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL || 'https://ubiquitous-alfajores-f4baae.netlify.app').replace(/\/+$/, '');
@@ -31,12 +46,25 @@ async function getOrCreateWebsite() {
       name: DEFAULT_SLUG === 'similaris' ? 'Similaris' : DEFAULT_SLUG,
       slug: DEFAULT_SLUG,
       baseUrl: DEFAULT_BASE_URL,
+      supportedLocales: allLocaleCodes,
+      defaultLocale: 'en-US',
     });
     console.log(`Created website: ${website.slug}`);
-  } else if (!website.baseUrl || website.baseUrl !== DEFAULT_BASE_URL) {
-    website.baseUrl = DEFAULT_BASE_URL;
-    await website.save();
-    console.log(`Updated website baseUrl: ${website.slug} -> ${website.baseUrl}`);
+  } else {
+    let changed = false;
+    if (!website.baseUrl || website.baseUrl !== DEFAULT_BASE_URL) {
+      website.baseUrl = DEFAULT_BASE_URL;
+      changed = true;
+      console.log(`Updated website baseUrl: ${website.slug} -> ${website.baseUrl}`);
+    }
+    const cur = JSON.stringify((website.supportedLocales || []).slice().sort());
+    const next = JSON.stringify([...allLocaleCodes].slice().sort());
+    if (cur !== next) {
+      website.supportedLocales = allLocaleCodes;
+      changed = true;
+      console.log(`Updated website supportedLocales (${allLocaleCodes.length} locales) for sitemap/client parity`);
+    }
+    if (changed) await website.save();
   }
   return website._id;
 }
@@ -47,6 +75,7 @@ async function run() {
     process.exit(1);
   }
   await mongoose.connect(process.env.MONGO_URL);
+  await ensureSiteSlugs();
   const websiteId = await getOrCreateWebsite();
   const force = process.argv.includes('--force');
   const existing = await Site.countDocuments({ website: websiteId });
@@ -60,7 +89,13 @@ async function run() {
     await Site.deleteMany({ website: websiteId });
     console.log('Cleared existing sites for this website.');
   }
-  const sites = sitesWithDetails.map((s) => ({ ...s, website: websiteId }));
+  const sites = await Promise.all(
+    sitesWithDetails.map(async (s) => {
+      const base = domainToSlug(s.domain);
+      const slug = await uniqueSlugForWebsite(websiteId, base);
+      return { ...s, website: websiteId, slug };
+    })
+  );
   await Site.insertMany(sites);
   console.log(`Seeded ${sites.length} sites for website "${DEFAULT_SLUG}".`);
   await mongoose.disconnect();

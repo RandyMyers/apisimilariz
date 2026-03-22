@@ -1,6 +1,7 @@
 const Review = require('../models/Review');
 const Site = require('../models/Site');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { findSiteBySlugOrDomain } = require('../utils/siteSlug');
 
 async function recalcSiteStats(websiteId, domain) {
   const d = domain.toLowerCase().trim();
@@ -18,16 +19,16 @@ async function recalcSiteStats(websiteId, domain) {
 }
 
 exports.listByDomain = asyncHandler(async (req, res) => {
-  const domain = (req.params.domain || '').toLowerCase().trim();
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const skip = (page - 1) * limit;
   const websiteId = req.websiteId;
 
-  const site = await Site.findOne({ website: websiteId, domain }).lean();
+  const site = await findSiteBySlugOrDomain(websiteId, req.params.domain);
   if (!site) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
+  const domain = site.domain;
 
   const [reviews, total] = await Promise.all([
     Review.find({ website: websiteId, domain }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -42,12 +43,12 @@ exports.listByDomain = asyncHandler(async (req, res) => {
 });
 
 exports.create = asyncHandler(async (req, res) => {
-  const domain = (req.params.domain || '').toLowerCase().trim();
   const websiteId = req.websiteId;
-  const site = await Site.findOne({ website: websiteId, domain });
+  const site = await findSiteBySlugOrDomain(websiteId, req.params.domain);
   if (!site) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
+  const domain = site.domain;
 
   const authorName = req.body.authorName?.trim() || (req.user ? req.user.name : 'Anonymous');
   const review = await Review.create({
