@@ -6,6 +6,7 @@ const { DEFAULT_LOCALE_CODE, allLocaleCodes, pathPrefixForCode } = require('../c
 
 const STATIC_PATHS = [
   '',
+  'search',
   'categories',
   'top-sites',
   'compare',

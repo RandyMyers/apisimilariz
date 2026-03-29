@@ -12,10 +12,17 @@ const SITE_I18N_NESTED = ['seo', 'similarPageSeo'];
 const SPONSORED_I18N_FIELDS = ['title', 'description', 'code'];
 const SPONSORED_I18N_NESTED = ['seo'];
 
+function clampInt(val, min, max, fallback) {
+  const n = parseInt(val, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 exports.list = asyncHandler(async (req, res) => {
   const { q, category, sort = 'userScore', page = 1, limit = 20 } = req.query;
-  const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.min(50, Math.max(1, parseInt(limit, 10)));
-  const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
+  const pageNum = clampInt(page, 1, 1000000, 1);
+  const limitNum = clampInt(limit, 1, 50, 20);
+  const skip = (pageNum - 1) * limitNum;
 
   const filter = { website: req.websiteId };
   if (category && category.trim()) {
@@ -58,7 +65,7 @@ exports.list = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data,
-    pagination: { page: Math.floor(skip / limitNum) + 1, limit: limitNum, total },
+    pagination: { page: pageNum, limit: limitNum, total },
   });
 });
 
@@ -73,7 +80,7 @@ exports.getByDomain = asyncHandler(async (req, res) => {
 });
 
 exports.getTop = asyncHandler(async (req, res) => {
-  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const limit = clampInt(req.query.limit, 1, 50, 20);
   const sites = await Site.find({ website: req.websiteId })
     .populate('category', 'name slug')
     .sort({ userScore: -1, similarityScore: -1, reviewCount: -1, trending: 1 })

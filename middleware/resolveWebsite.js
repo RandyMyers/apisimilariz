@@ -8,7 +8,7 @@ const { asyncHandler } = require('./errorHandler');
  */
 const resolveWebsite = asyncHandler(async (req, res, next) => {
   const slug =
-    (req.headers['x-website-slug'] || req.query.website || process.env.DEFAULT_WEBSITE_SLUG || 'similaris')
+    (req.headers['x-website-slug'] || req.query.website || process.env.DEFAULT_WEBSITE_SLUG || 'citematch')
       .trim()
       .toLowerCase();
   const website = await Website.findOne({ slug }).lean();

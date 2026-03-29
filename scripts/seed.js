@@ -23,8 +23,17 @@ async function ensureSiteSlugs() {
   if (missing.length) console.log(`Backfilled slug on ${missing.length} site(s).`);
 }
 
-const DEFAULT_SLUG = process.env.DEFAULT_WEBSITE_SLUG || 'similaris';
-const DEFAULT_BASE_URL = (process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL || 'https://ubiquitous-alfajores-f4baae.netlify.app').replace(/\/+$/, '');
+const DEFAULT_SLUG = process.env.DEFAULT_WEBSITE_SLUG || 'citematch';
+const DEFAULT_BASE_URL = (process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL || 'https://citematch.com').replace(
+  /\/+$/,
+  ''
+);
+
+function websiteDisplayName(slug) {
+  if (slug === 'citematch') return 'CiteMatch';
+  if (slug === 'similaris') return 'Similaris';
+  return slug;
+}
 
 const sitesWithDetails = [
   { domain: 'github.com', title: 'GitHub', description: "The world's leading software development platform for version control and collaboration.", category: 'Technology', tags: ['Development', 'Open Source', 'SaaS'], similarityScore: 98, alternativeRank: 1, alternativeTo: 'GitLab', trending: 'Top choice', userScore: 4.9, reviewCount: 2847, longDescription: "GitHub is the world's leading software development and version control platform. Millions of developers and companies build, ship, and maintain their software on GitHub. It offers unlimited private repositories, powerful collaboration tools, integrated CI/CD, and a vast ecosystem of integrations and actions. Whether you're open source or enterprise, GitHub provides the tools to ship better code together.", features: ['Unlimited public and private repos', 'Actions for CI/CD', 'Code review and pull requests', 'Issue tracking and projects', 'GitHub Pages', 'API and integrations'] },
@@ -45,7 +54,7 @@ async function getOrCreateWebsite() {
   let website = await Website.findOne({ slug: DEFAULT_SLUG });
   if (!website) {
     website = await Website.create({
-      name: DEFAULT_SLUG === 'similaris' ? 'Similaris' : DEFAULT_SLUG,
+      name: websiteDisplayName(DEFAULT_SLUG),
       slug: DEFAULT_SLUG,
       baseUrl: DEFAULT_BASE_URL,
       supportedLocales: allLocaleCodes,

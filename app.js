@@ -7,7 +7,7 @@ const { validateEnv } = require('./utils/envValidator');
 const env = validateEnv({
   required: ['MONGO_URL', 'JWT_SECRET', 'PORT'],
   optional: ['NODE_ENV', 'CLIENT_URL', 'ALLOWED_ORIGINS', 'JWT_EXPIRES_IN', 'DEFAULT_WEBSITE_SLUG'],
-  defaults: { NODE_ENV: 'development', PORT: 5000, DEFAULT_WEBSITE_SLUG: 'similaris' },
+  defaults: { NODE_ENV: 'development', PORT: 5000, DEFAULT_WEBSITE_SLUG: 'citematch' },
 });
 
 const express = require('express');

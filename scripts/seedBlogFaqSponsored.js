@@ -8,14 +8,23 @@ const BlogPost = require('../models/BlogPost');
 const FAQ = require('../models/FAQ');
 const SponsoredItem = require('../models/SponsoredItem');
 
-const DEFAULT_SLUG = process.env.DEFAULT_WEBSITE_SLUG || 'similaris';
-const DEFAULT_BASE_URL = (process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL || 'https://ubiquitous-alfajores-f4baae.netlify.app').replace(/\/+$/, '');
+const DEFAULT_SLUG = process.env.DEFAULT_WEBSITE_SLUG || 'citematch';
+const DEFAULT_BASE_URL = (process.env.WEBSITE_BASE_URL || process.env.CLIENT_URL || 'https://citematch.com').replace(
+  /\/+$/,
+  ''
+);
+
+function websiteDisplayName(slug) {
+  if (slug === 'citematch') return 'CiteMatch';
+  if (slug === 'similaris') return 'Similaris';
+  return slug;
+}
 
 async function getOrCreateWebsite() {
   let website = await Website.findOne({ slug: DEFAULT_SLUG });
   if (!website) {
     website = await Website.create({
-      name: DEFAULT_SLUG === 'similaris' ? 'Similaris' : DEFAULT_SLUG,
+      name: websiteDisplayName(DEFAULT_SLUG),
       slug: DEFAULT_SLUG,
       baseUrl: DEFAULT_BASE_URL,
     });
