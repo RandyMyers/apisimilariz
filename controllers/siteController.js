@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Site = require('../models/Site');
 const Category = require('../models/Category');
 const SponsoredItem = require('../models/SponsoredItem');
@@ -16,6 +17,26 @@ function clampInt(val, min, max, fallback) {
   const n = parseInt(val, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+/** Avoid populate() CastError when legacy rows have invalid category refs. */
+async function attachCategoriesLean(sites) {
+  if (!sites || !sites.length) return sites;
+  const rawIds = sites.map((s) => s.category).filter(Boolean);
+  const ids = [...new Set(rawIds.map((id) => String(id)))].filter(
+    (id) => mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id
+  );
+  if (!ids.length) {
+    return sites.map((s) => ({ ...s, category: s.category }));
+  }
+  const cats = await Category.find({ _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } })
+    .select('name slug')
+    .lean();
+  const byId = new Map(cats.map((c) => [String(c._id), c]));
+  return sites.map((s) => ({
+    ...s,
+    category: byId.get(String(s.category)) || s.category,
+  }));
 }
 
 exports.list = asyncHandler(async (req, res) => {
@@ -49,15 +70,16 @@ exports.list = asyncHandler(async (req, res) => {
     ];
   }
 
-  let query = Site.find(filter).populate('category', 'name slug').lean();
+  let query = Site.find(filter);
   if (sort === 'alternativeRank') query = query.sort({ alternativeRank: 1, userScore: -1, similarityScore: -1 });
   else if (sort === 'relevance' && q && q.trim()) query = query.sort({ similarityScore: -1, userScore: -1 });
   else query = query.sort({ userScore: -1, similarityScore: -1, reviewCount: -1 });
 
-  const [sites, total] = await Promise.all([
-    query.skip(skip).limit(limitNum),
+  const [sitesRaw, total] = await Promise.all([
+    query.skip(skip).limit(limitNum).lean(),
     Site.countDocuments(filter),
   ]);
+  const sites = await attachCategoriesLean(sitesRaw);
 
   const locale = req.locale || null;
   const data = locale ? sites.map((s) => applyI18n(s, locale, SITE_I18N_FIELDS, SITE_I18N_NESTED)) : sites.map((s) => ({ ...s, i18n: undefined }));
@@ -81,11 +103,11 @@ exports.getByDomain = asyncHandler(async (req, res) => {
 
 exports.getTop = asyncHandler(async (req, res) => {
   const limit = clampInt(req.query.limit, 1, 50, 20);
-  const sites = await Site.find({ website: req.websiteId })
-    .populate('category', 'name slug')
+  const sitesRaw = await Site.find({ website: req.websiteId })
     .sort({ userScore: -1, similarityScore: -1, reviewCount: -1, trending: 1 })
     .limit(limit)
     .lean();
+  const sites = await attachCategoriesLean(sitesRaw);
   const locale = req.locale || null;
   const data = locale ? sites.map((s) => applyI18n(s, locale, SITE_I18N_FIELDS, SITE_I18N_NESTED)) : sites.map((s) => ({ ...s, i18n: undefined }));
   res.status(200).json({ success: true, data });
@@ -135,13 +157,12 @@ exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
 
   let sites = [];
   if (curatedIds.length > 0) {
-    const docs = await Site.find({
+    const docsRaw = await Site.find({
       _id: { $in: curatedIds },
       website: req.websiteId,
       domain: { $ne: mainDomain },
-    })
-      .populate('category', 'name slug')
-      .lean();
+    }).lean();
+    const docs = await attachCategoriesLean(docsRaw);
     const byId = new Map(docs.map((s) => [String(s._id), s]));
     sites = curatedIds.map((id) => byId.get(String(id))).filter(Boolean);
   }

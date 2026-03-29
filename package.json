@@ -10,6 +10,7 @@
     "seed:content": "node scripts/seedBlogFaqSponsored.js",
     "seed:all": "node scripts/seed.js --force && node scripts/seedBlogFaqSponsored.js --force",
     "backfill:slugs": "node scripts/backfillSiteSlugs.js",
+    "audit:tenant": "node scripts/auditTenantData.js",
     "create-admin": "node scripts/createAdmin.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
