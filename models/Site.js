@@ -44,9 +44,9 @@ const siteSchema = new mongoose.Schema({
     maxlength: [2000, 'Description cannot exceed 2000 characters'],
   },
   category: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
     required: [true, 'Category is required'],
-    trim: true,
   },
   tags: {
     type: [String],

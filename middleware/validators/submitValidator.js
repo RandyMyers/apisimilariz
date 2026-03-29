@@ -26,7 +26,12 @@ exports.validateSubmitSite = [
     .withMessage('Description is required')
     .isLength({ max: 2000 })
     .withMessage('Description cannot exceed 2000 characters'),
-  body('category').trim().notEmpty().withMessage('Category is required'),
+  body('category')
+    .trim()
+    .notEmpty()
+    .withMessage('Category is required')
+    .isMongoId()
+    .withMessage('Category must be a valid category id'),
   body('email')
     .trim()
     .notEmpty()

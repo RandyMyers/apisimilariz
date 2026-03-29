@@ -17,9 +17,9 @@ async function findSiteBySlugOrDomain(websiteId, param) {
   const p = decodeURIComponent(String(param || '').trim());
   if (!p) return null;
   const lower = p.toLowerCase();
-  let site = await Site.findOne({ website: websiteId, slug: lower }).lean();
+  let site = await Site.findOne({ website: websiteId, slug: lower }).populate('category', 'name slug').lean();
   if (site) return site;
-  site = await Site.findOne({ website: websiteId, domain: lower }).lean();
+  site = await Site.findOne({ website: websiteId, domain: lower }).populate('category', 'name slug').lean();
   return site;
 }
 

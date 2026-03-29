@@ -44,6 +44,7 @@ const adminSponsoredRoutes = require('./routes/adminSponsoredRoutes');
 const adminDashboardRoutes = require('./routes/adminDashboardRoutes');
 const adminReviewRoutes = require('./routes/adminReviewRoutes');
 const adminSimilarityVoteRoutes = require('./routes/adminSimilarityVoteRoutes');
+const adminCategoryRoutes = require('./routes/adminCategoryRoutes');
 const sitemapRoutes = require('./routes/sitemapRoutes');
 const robotsRoutes = require('./routes/robotsRoutes');
 const staticPageRoutes = require('./routes/staticPageRoutes');
@@ -62,6 +63,8 @@ const envAllowed =
 const allowedOrigins = [
   env.CLIENT_URL,
   ...envAllowed,
+  'https://citematch.com',
+  'https://www.citematch.com',
   'https://ubiquitous-alfajores-f4baae.netlify.app',
   'https://starlit-conkies-b6b727.netlify.app',
   'http://localhost:3000',
@@ -129,6 +132,7 @@ app.use('/api/robots.txt', resolveWebsite, robotsRoutes);
 
 app.use('/api/admin/websites', requireAdmin[0], requireAdmin[1], adminWebsiteRoutes);
 app.use('/api/admin/sites', requireAdmin[0], requireAdmin[1], adminSiteRoutes);
+app.use('/api/admin/categories', requireAdmin[0], requireAdmin[1], adminCategoryRoutes);
 app.use('/api/admin/submissions', requireAdmin[0], requireAdmin[1], adminSubmissionRoutes);
 app.use('/api/admin/contact', requireAdmin[0], requireAdmin[1], adminContactRoutes);
 app.use('/api/admin/remove', requireAdmin[0], requireAdmin[1], adminRemoveRoutes);

@@ -27,7 +27,13 @@ exports.list = asyncHandler(async (req, res) => {
   if (status && ['pending', 'approved', 'rejected'].includes(status)) filter.status = status;
 
   const [items, total] = await Promise.all([
-    SiteSubmission.find(filter).populate('website', 'name slug').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    SiteSubmission.find(filter)
+      .populate('website', 'name slug')
+      .populate('category', 'name slug')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     SiteSubmission.countDocuments(filter),
   ]);
 
@@ -39,7 +45,10 @@ exports.list = asyncHandler(async (req, res) => {
 });
 
 exports.getById = asyncHandler(async (req, res) => {
-  const item = await SiteSubmission.findById(req.params.id).lean();
+  const item = await SiteSubmission.findById(req.params.id)
+    .populate('website', 'name slug')
+    .populate('category', 'name slug')
+    .lean();
   if (!item) {
     return res.status(404).json({ success: false, message: 'Submission not found' });
   }
@@ -55,7 +64,10 @@ exports.updateStatus = asyncHandler(async (req, res) => {
     req.params.id,
     { status: String(status) },
     { new: true }
-  ).lean();
+  )
+    .populate('website', 'name slug')
+    .populate('category', 'name slug')
+    .lean();
   if (!item) {
     return res.status(404).json({ success: false, message: 'Submission not found' });
   }

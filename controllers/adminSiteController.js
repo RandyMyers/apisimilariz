@@ -1,8 +1,10 @@
 const mongoose = require('mongoose');
 const Site = require('../models/Site');
 const Website = require('../models/Website');
+const Category = require('../models/Category');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { domainToSlug, uniqueSlugForWebsite } = require('../utils/siteSlug');
+const { escapeRegex } = require('../utils/resolveCategoryFilter');
 
 const resolveWebsiteId = async (websiteParam) => {
   if (!websiteParam) return null;
@@ -30,17 +32,27 @@ exports.list = asyncHandler(async (req, res) => {
 
   const filter = {};
   if (websiteId) filter.website = websiteId;
-  if (category) filter.category = category;
+  if (category) {
+    if (mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    } else {
+      filter._id = null;
+    }
+  }
   if (trending && ['Top choice', 'Rising', 'Stable'].includes(trending)) {
     filter.trending = trending;
   }
   if (q) {
+    const escaped = escapeRegex(q);
+    const catQ = { name: new RegExp(escaped, 'i') };
+    if (websiteId) catQ.website = websiteId;
+    const catIds = await Category.find(catQ).distinct('_id');
     filter.$or = [
       { title: new RegExp(q, 'i') },
       { description: new RegExp(q, 'i') },
       { domain: new RegExp(q, 'i') },
       { slug: new RegExp(q, 'i') },
-      { category: new RegExp(q, 'i') },
+      ...(catIds.length ? [{ category: { $in: catIds } }] : []),
     ];
   }
 
@@ -50,7 +62,7 @@ exports.list = asyncHandler(async (req, res) => {
   if (sortKey === 'title') sort = { title: 1 };
 
   const [sitesRaw, total] = await Promise.all([
-    Site.find(filter).populate('website', 'name slug').sort(sort).skip(skip).limit(limit).lean(),
+    Site.find(filter).populate('website', 'name slug').populate('category', 'name slug').sort(sort).skip(skip).limit(limit).lean(),
     Site.countDocuments(filter),
   ]);
 
@@ -70,7 +82,7 @@ exports.list = asyncHandler(async (req, res) => {
 
 /** GET /api/admin/sites/:id/curated-similar */
 exports.getCuratedSimilar = asyncHandler(async (req, res) => {
-  const main = await Site.findById(req.params.id).populate('website', 'name slug').lean();
+  const main = await Site.findById(req.params.id).populate('website', 'name slug').populate('category', 'name slug').lean();
   if (!main) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
@@ -81,7 +93,7 @@ exports.getCuratedSimilar = asyncHandler(async (req, res) => {
     return res.status(200).json({ success: true, data: { mainSite: main, items: [] } });
   }
   const wid = main.website && main.website._id ? main.website._id : main.website;
-  const docs = await Site.find({ _id: { $in: ids }, website: wid }).lean();
+  const docs = await Site.find({ _id: { $in: ids }, website: wid }).populate('category', 'name slug').lean();
   const byId = new Map(docs.map((s) => [String(s._id), s]));
   const items = sorted
     .map((row) => {
@@ -120,12 +132,12 @@ exports.putCuratedSimilar = asyncHandler(async (req, res) => {
   main.curatedSimilar = normalized;
   main.updatedAt = new Date();
   await main.save();
-  const updated = await Site.findById(main._id).populate('website', 'name slug').lean();
+  const updated = await Site.findById(main._id).populate('website', 'name slug').populate('category', 'name slug').lean();
   res.status(200).json({ success: true, data: updated });
 });
 
 exports.getById = asyncHandler(async (req, res) => {
-  const site = await Site.findById(req.params.id).lean();
+  const site = await Site.findById(req.params.id).populate('category', 'name slug').lean();
   if (!site) {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
@@ -145,13 +157,23 @@ exports.create = asyncHandler(async (req, res) => {
   let slug = (req.body.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
   if (!slug) slug = domainToSlug(domain);
   slug = await uniqueSlugForWebsite(websiteId, slug);
+  if (req.body.category) {
+    const cat = await Category.findOne({ _id: req.body.category, website: websiteId }).select('_id').lean();
+    if (!cat) {
+      return res.status(400).json({ success: false, message: 'Invalid category for this website' });
+    }
+  } else {
+    return res.status(400).json({ success: false, message: 'category is required' });
+  }
+
   const site = await Site.create({
     ...req.body,
     website: websiteId,
     domain,
     slug,
   });
-  res.status(201).json({ success: true, data: site });
+  const populated = await Site.findById(site._id).populate('category', 'name slug').lean();
+  res.status(201).json({ success: true, data: populated });
 });
 
 exports.update = asyncHandler(async (req, res) => {
@@ -160,6 +182,12 @@ exports.update = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Site not found' });
   }
   const update = { ...req.body, updatedAt: new Date() };
+  if (req.body.category !== undefined) {
+    const cat = await Category.findOne({ _id: req.body.category, website: existing.website }).select('_id').lean();
+    if (!cat) {
+      return res.status(400).json({ success: false, message: 'Invalid category for this website' });
+    }
+  }
   if (req.body.domain !== undefined) update.domain = String(req.body.domain).trim().toLowerCase();
   if (req.body.slug !== undefined) {
     let slug = String(req.body.slug).trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -174,7 +202,8 @@ exports.update = asyncHandler(async (req, res) => {
   }
   const site = await Site.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true }).lean();
   if (!site) return res.status(404).json({ success: false, message: 'Site not found' });
-  res.status(200).json({ success: true, data: site });
+  const populated = await Site.findById(site._id).populate('category', 'name slug').lean();
+  res.status(200).json({ success: true, data: populated });
 });
 
 exports.delete = asyncHandler(async (req, res) => {

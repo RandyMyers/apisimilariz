@@ -1,9 +1,11 @@
 const Site = require('../models/Site');
+const Category = require('../models/Category');
 const SponsoredItem = require('../models/SponsoredItem');
 const SimilarityVote = require('../models/SimilarityVote');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { applyI18n } = require('../utils/i18nMerge');
 const { findSiteBySlugOrDomain } = require('../utils/siteSlug');
+const { resolveCategoryIdForWebsite, escapeRegex } = require('../utils/resolveCategoryFilter');
 
 const SITE_I18N_FIELDS = ['title', 'description', 'longDescription', 'features'];
 const SITE_I18N_NESTED = ['seo', 'similarPageSeo'];
@@ -16,19 +18,31 @@ exports.list = asyncHandler(async (req, res) => {
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
 
   const filter = { website: req.websiteId };
-  if (category && category.trim()) filter.category = category.trim();
+  if (category && category.trim()) {
+    const cid = await resolveCategoryIdForWebsite(req.websiteId, category);
+    if (cid) filter.category = cid;
+    else filter._id = null;
+  }
   if (q && q.trim()) {
+    const qt = q.trim();
+    const catDocs = await Category.find({
+      website: req.websiteId,
+      name: new RegExp(escapeRegex(qt), 'i'),
+    })
+      .select('_id')
+      .lean();
+    const catIds = catDocs.map((c) => c._id);
     filter.$or = [
-      { title: new RegExp(q.trim(), 'i') },
-      { description: new RegExp(q.trim(), 'i') },
-      { domain: new RegExp(q.trim(), 'i') },
-      { slug: new RegExp(q.trim(), 'i') },
-      { tags: new RegExp(q.trim(), 'i') },
-      { category: new RegExp(q.trim(), 'i') },
+      { title: new RegExp(qt, 'i') },
+      { description: new RegExp(qt, 'i') },
+      { domain: new RegExp(qt, 'i') },
+      { slug: new RegExp(qt, 'i') },
+      { tags: new RegExp(qt, 'i') },
+      ...(catIds.length ? [{ category: { $in: catIds } }] : []),
     ];
   }
 
-  let query = Site.find(filter).lean();
+  let query = Site.find(filter).populate('category', 'name slug').lean();
   if (sort === 'alternativeRank') query = query.sort({ alternativeRank: 1, userScore: -1, similarityScore: -1 });
   else if (sort === 'relevance' && q && q.trim()) query = query.sort({ similarityScore: -1, userScore: -1 });
   else query = query.sort({ userScore: -1, similarityScore: -1, reviewCount: -1 });
@@ -61,6 +75,7 @@ exports.getByDomain = asyncHandler(async (req, res) => {
 exports.getTop = asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
   const sites = await Site.find({ website: req.websiteId })
+    .populate('category', 'name slug')
     .sort({ userScore: -1, similarityScore: -1, reviewCount: -1, trending: 1 })
     .limit(limit)
     .lean();
@@ -70,8 +85,18 @@ exports.getTop = asyncHandler(async (req, res) => {
 });
 
 exports.getCategories = asyncHandler(async (req, res) => {
-  const categories = await Site.distinct('category', { website: req.websiteId }).then((arr) => arr.filter(Boolean).sort());
-  res.status(200).json({ success: true, data: categories });
+  const rows = await Category.find({ website: req.websiteId, active: true })
+    .select('name slug sortOrder')
+    .sort({ sortOrder: 1, name: 1 })
+    .lean();
+  const data = rows.map((c) => ({
+    _id: c._id,
+    id: c._id,
+    name: c.name,
+    slug: c.slug,
+    sortOrder: c.sortOrder,
+  }));
+  res.status(200).json({ success: true, data });
 });
 
 exports.getSponsoredByDomain = asyncHandler(async (req, res) => {
@@ -107,7 +132,9 @@ exports.getSimilarWithVotes = asyncHandler(async (req, res) => {
       _id: { $in: curatedIds },
       website: req.websiteId,
       domain: { $ne: mainDomain },
-    }).lean();
+    })
+      .populate('category', 'name slug')
+      .lean();
     const byId = new Map(docs.map((s) => [String(s._id), s]));
     sites = curatedIds.map((id) => byId.get(String(id))).filter(Boolean);
   }

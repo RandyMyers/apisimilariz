@@ -5,8 +5,10 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 const Website = require('../models/Website');
 const Site = require('../models/Site');
+const Category = require('../models/Category');
 const { allLocaleCodes } = require('../config/siteLocales');
 const { domainToSlug, uniqueSlugForWebsite } = require('../utils/siteSlug');
+const { nameToSlug, uniqueCategorySlug } = require('../utils/categorySlug');
 
 async function ensureSiteSlugs() {
   const missing = await Site.find({
@@ -87,13 +89,29 @@ async function run() {
   }
   if (existing > 0 && force) {
     await Site.deleteMany({ website: websiteId });
-    console.log('Cleared existing sites for this website.');
+    await Category.deleteMany({ website: websiteId });
+    console.log('Cleared existing sites and categories for this website.');
+  }
+  const uniqueNames = [...new Set(sitesWithDetails.map((s) => s.category))];
+  const categoryIdByName = {};
+  for (let i = 0; i < uniqueNames.length; i += 1) {
+    const name = uniqueNames[i];
+    const slug = await uniqueCategorySlug(websiteId, nameToSlug(name));
+    const cat = await Category.create({
+      website: websiteId,
+      name,
+      slug,
+      sortOrder: i,
+      active: true,
+    });
+    categoryIdByName[name] = cat._id;
   }
   const sites = await Promise.all(
     sitesWithDetails.map(async (s) => {
       const base = domainToSlug(s.domain);
       const slug = await uniqueSlugForWebsite(websiteId, base);
-      return { ...s, website: websiteId, slug };
+      const { category: _catName, ...rest } = s;
+      return { ...rest, website: websiteId, slug, category: categoryIdByName[s.category] };
     })
   );
   await Site.insertMany(sites);
