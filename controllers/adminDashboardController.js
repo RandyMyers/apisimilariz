@@ -12,6 +12,8 @@ const SponsoredItem = require('../models/SponsoredItem');
 const Review = require('../models/Review');
 const StaticPage = require('../models/StaticPage');
 const SimilarityVote = require('../models/SimilarityVote');
+const AdCampaign = require('../models/AdCampaign');
+const AdEvent = require('../models/AdEvent');
 
 const resolveWebsiteId = async (websiteParam) => {
   if (!websiteParam) return null;
@@ -45,6 +47,8 @@ exports.getStats = asyncHandler(async (req, res) => {
     reviews,
     staticPages,
     similarityVotes,
+    adCampaigns,
+    adEvents,
   ] = await Promise.all([
     Website.countDocuments(wFilter),
     Site.countDocuments(scoped),
@@ -58,6 +62,8 @@ exports.getStats = asyncHandler(async (req, res) => {
     Review.countDocuments(scoped),
     StaticPage.countDocuments(scoped),
     SimilarityVote.countDocuments(scoped),
+    AdCampaign.countDocuments(scoped),
+    AdEvent.countDocuments(scoped),
   ]);
 
   res.status(200).json({
@@ -75,6 +81,8 @@ exports.getStats = asyncHandler(async (req, res) => {
       reviews,
       staticPages,
       similarityVotes,
+      adCampaigns,
+      adEvents,
     },
   });
 });

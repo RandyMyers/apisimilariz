@@ -12,6 +12,7 @@
     "backfill:slugs": "node scripts/backfillSiteSlugs.js",
     "audit:tenant": "node scripts/auditTenantData.js",
     "create-admin": "node scripts/createAdmin.js",
+    "migrate:ad-creatives": "node scripts/migrateAdCampaignCreativesToRefs.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -19,10 +20,12 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
+    "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-fileupload": "^1.5.2",
     "express-rate-limit": "^7.1.5",
     "express-validator": "^7.0.1",
     "helmet": "^7.1.0",

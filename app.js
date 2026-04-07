@@ -6,7 +6,17 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const { validateEnv } = require('./utils/envValidator');
 const env = validateEnv({
   required: ['MONGO_URL', 'JWT_SECRET', 'PORT'],
-  optional: ['NODE_ENV', 'CLIENT_URL', 'ALLOWED_ORIGINS', 'JWT_EXPIRES_IN', 'DEFAULT_WEBSITE_SLUG'],
+  optional: [
+    'NODE_ENV',
+    'CLIENT_URL',
+    'ALLOWED_ORIGINS',
+    'JWT_EXPIRES_IN',
+    'DEFAULT_WEBSITE_SLUG',
+    'CLOUDINARY_CLOUD_NAME',
+    'CLOUDINARY_API_KEY',
+    'CLOUDINARY_API_SECRET',
+    'CLOUDINARY_AD_FOLDER',
+  ],
   defaults: { NODE_ENV: 'development', PORT: 5000, DEFAULT_WEBSITE_SLUG: 'citematch' },
 });
 
@@ -29,6 +39,7 @@ const newsletterRoutes = require('./routes/newsletterRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const blogRoutes = require('./routes/blogRoutes');
 const faqRoutes = require('./routes/faqRoutes');
+const adRoutes = require('./routes/adRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const resolveWebsite = require('./middleware/resolveWebsite');
 const { requireAdmin } = require('./middleware/adminAuth');
@@ -41,6 +52,10 @@ const adminNewsletterRoutes = require('./routes/adminNewsletterRoutes');
 const adminBlogRoutes = require('./routes/adminBlogRoutes');
 const adminFaqRoutes = require('./routes/adminFaqRoutes');
 const adminSponsoredRoutes = require('./routes/adminSponsoredRoutes');
+const adminAdCampaignRoutes = require('./routes/adminAdCampaignRoutes');
+const adminAdCreativeRoutes = require('./routes/adminAdCreativeRoutes');
+const adminAdAnalyticsRoutes = require('./routes/adminAdAnalyticsRoutes');
+const adminAdMediaRoutes = require('./routes/adminAdMediaRoutes');
 const adminDashboardRoutes = require('./routes/adminDashboardRoutes');
 const adminReviewRoutes = require('./routes/adminReviewRoutes');
 const adminSimilarityVoteRoutes = require('./routes/adminSimilarityVoteRoutes');
@@ -49,6 +64,7 @@ const sitemapRoutes = require('./routes/sitemapRoutes');
 const robotsRoutes = require('./routes/robotsRoutes');
 const staticPageRoutes = require('./routes/staticPageRoutes');
 const adminStaticPageRoutes = require('./routes/adminStaticPageRoutes');
+const { startDailyRollupScheduler } = require('./services/adDailyRollupService');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -80,7 +96,7 @@ app.use(
       cb(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Website-Slug', 'X-Locale'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Website-Slug', 'X-Locale', 'X-Country-Code'],
     credentials: true,
   })
 );
@@ -101,7 +117,10 @@ app.use(parseLocale);
 
 mongoose
   .connect(env.MONGO_URL)
-  .then(() => logger.info('MongoDB connected'))
+  .then(() => {
+    logger.info('MongoDB connected');
+    startDailyRollupScheduler();
+  })
   .catch((err) => {
     logger.error('MongoDB connection error:', err.message);
     process.exit(1);
@@ -126,6 +145,7 @@ app.use('/api/newsletter', resolveWebsite, newsletterRoutes);
 app.use('/api/report', resolveWebsite, reportRoutes);
 app.use('/api/blog', resolveWebsite, blogRoutes);
 app.use('/api/faq', resolveWebsite, faqRoutes);
+app.use('/api/ads', resolveWebsite, adRoutes);
 app.use('/api/pages', resolveWebsite, staticPageRoutes);
 app.use('/api/sitemap.xml', resolveWebsite, sitemapRoutes);
 app.use('/api/robots.txt', resolveWebsite, robotsRoutes);
@@ -141,6 +161,10 @@ app.use('/api/admin/pages', requireAdmin[0], requireAdmin[1], adminStaticPageRou
 app.use('/api/admin/blog', requireAdmin[0], requireAdmin[1], adminBlogRoutes);
 app.use('/api/admin/faq', requireAdmin[0], requireAdmin[1], adminFaqRoutes);
 app.use('/api/admin/sponsored', requireAdmin[0], requireAdmin[1], adminSponsoredRoutes);
+app.use('/api/admin/ads/creatives', requireAdmin[0], requireAdmin[1], adminAdCreativeRoutes);
+app.use('/api/admin/ads/campaigns', requireAdmin[0], requireAdmin[1], adminAdCampaignRoutes);
+app.use('/api/admin/ads/analytics', requireAdmin[0], requireAdmin[1], adminAdAnalyticsRoutes);
+app.use('/api/admin/ads/media', requireAdmin[0], requireAdmin[1], adminAdMediaRoutes);
 app.use('/api/admin/dashboard', requireAdmin[0], requireAdmin[1], adminDashboardRoutes);
 app.use('/api/admin/reviews', requireAdmin[0], requireAdmin[1], adminReviewRoutes);
 app.use('/api/admin/similarity-votes', requireAdmin[0], requireAdmin[1], adminSimilarityVoteRoutes);
