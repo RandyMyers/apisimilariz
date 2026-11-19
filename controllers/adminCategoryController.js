@@ -5,6 +5,61 @@ const Website = require('../models/Website');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { nameToSlug, uniqueCategorySlug } = require('../utils/categorySlug');
 
+const normalizeFaqs = (faqs) => {
+  if (!Array.isArray(faqs)) return [];
+  return faqs
+    .map((faq) => ({
+      question: String(faq?.question || '').trim(),
+      answer: String(faq?.answer || '').trim(),
+    }))
+    .filter((faq) => faq.question && faq.answer)
+    .slice(0, 50);
+};
+
+const normalizeSecondaryKeywords = (value) => {
+  const values = Array.isArray(value)
+    ? value
+    : String(value || '').split(',').map((item) => item.trim());
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))].slice(0, 10);
+};
+
+const normalizeSeo = (seo) => {
+  if (!seo || typeof seo !== 'object') return {};
+  const out = { ...seo };
+  if (out.secondaryKeywords !== undefined) {
+    out.secondaryKeywords = normalizeSecondaryKeywords(out.secondaryKeywords);
+  }
+  if (!out.keywords && out.primaryKeyword) {
+    out.keywords = [out.primaryKeyword, ...(out.secondaryKeywords || [])].join(', ');
+  }
+  if (out.sitemap && typeof out.sitemap === 'object') {
+    out.sitemap = {
+      include: out.sitemap.include !== false,
+      priority: Number.isFinite(Number(out.sitemap.priority)) ? Number(out.sitemap.priority) : 0.5,
+      changefreq: out.sitemap.changefreq || 'weekly',
+    };
+  }
+  return out;
+};
+
+const normalizeI18n = (i18n) => {
+  if (!i18n || typeof i18n !== 'object') return {};
+  const cleaned = {};
+  Object.entries(i18n).forEach(([locale, value]) => {
+    if (!locale || !value || typeof value !== 'object') return;
+    const entry = {};
+    ['name', 'slug', 'description', 'intro', 'pageContent', 'imageAlt'].forEach((key) => {
+      if (value[key] !== undefined && value[key] !== null && String(value[key]).trim() !== '') {
+        entry[key] = String(value[key]).trim();
+      }
+    });
+    if (value.faqs !== undefined) entry.faqs = normalizeFaqs(value.faqs);
+    if (value.seo !== undefined) entry.seo = normalizeSeo(value.seo);
+    if (Object.keys(entry).length) cleaned[locale] = entry;
+  });
+  return cleaned;
+};
+
 const resolveWebsiteId = async (websiteParam) => {
   if (!websiteParam) return null;
   if (mongoose.Types.ObjectId.isValid(websiteParam) && String(new mongoose.Types.ObjectId(websiteParam)) === websiteParam) {
@@ -60,6 +115,13 @@ exports.create = asyncHandler(async (req, res) => {
     name,
     slug,
     description: String(req.body.description || '').trim(),
+    image: String(req.body.image || '').trim(),
+    imageAlt: String(req.body.imageAlt || '').trim(),
+    intro: String(req.body.intro || '').trim(),
+    pageContent: String(req.body.pageContent || ''),
+    faqs: normalizeFaqs(req.body.faqs),
+    seo: normalizeSeo(req.body.seo),
+    i18n: normalizeI18n(req.body.i18n),
     sortOrder: Number.isFinite(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0,
     active: req.body.active !== false,
   });
@@ -74,6 +136,13 @@ exports.update = asyncHandler(async (req, res) => {
   const update = { updatedAt: new Date() };
   if (req.body.name !== undefined) update.name = String(req.body.name).trim();
   if (req.body.description !== undefined) update.description = String(req.body.description).trim();
+  if (req.body.image !== undefined) update.image = String(req.body.image).trim();
+  if (req.body.imageAlt !== undefined) update.imageAlt = String(req.body.imageAlt).trim();
+  if (req.body.intro !== undefined) update.intro = String(req.body.intro).trim();
+  if (req.body.pageContent !== undefined) update.pageContent = String(req.body.pageContent);
+  if (req.body.faqs !== undefined) update.faqs = normalizeFaqs(req.body.faqs);
+  if (req.body.seo !== undefined) update.seo = normalizeSeo(req.body.seo);
+  if (req.body.i18n !== undefined) update.i18n = normalizeI18n(req.body.i18n);
   if (req.body.sortOrder !== undefined) update.sortOrder = Number.isFinite(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0;
   if (req.body.active !== undefined) update.active = Boolean(req.body.active);
 

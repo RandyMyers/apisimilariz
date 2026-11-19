@@ -60,6 +60,7 @@ const adminDashboardRoutes = require('./routes/adminDashboardRoutes');
 const adminReviewRoutes = require('./routes/adminReviewRoutes');
 const adminSimilarityVoteRoutes = require('./routes/adminSimilarityVoteRoutes');
 const adminCategoryRoutes = require('./routes/adminCategoryRoutes');
+const publicSiteRoutes = require('./routes/publicSiteRoutes');
 const sitemapRoutes = require('./routes/sitemapRoutes');
 const robotsRoutes = require('./routes/robotsRoutes');
 const staticPageRoutes = require('./routes/staticPageRoutes');
@@ -137,6 +138,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/public', resolveWebsite, publicSiteRoutes);
 app.use('/api/sites', resolveWebsite, siteRoutes);
 app.use('/api/submit', resolveWebsite, submitRoutes);
 app.use('/api/contact', resolveWebsite, contactRoutes);

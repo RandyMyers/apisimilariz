@@ -1,6 +1,7 @@
 const Website = require('../models/Website');
 const BlogPost = require('../models/BlogPost');
 const Site = require('../models/Site');
+const Category = require('../models/Category');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { DEFAULT_LOCALE_CODE, allLocaleCodes, pathPrefixForCode } = require('../config/siteLocales');
 
@@ -101,6 +102,32 @@ exports.getSitemap = asyncHandler(async (req, res) => {
         priority: path === '' ? '1.0' : defaultPriority,
         links,
       });
+    });
+  });
+
+  // Category detail pages
+  const categories = await Category.find({ website: website._id, active: true })
+    .select('slug updatedAt seo')
+    .lean();
+  categories.forEach((category) => {
+    const seo = category.seo || {};
+    const sm = seo.sitemap || {};
+    if (sm.include === false) return;
+    const slug = category.slug;
+    if (!slug) return;
+    const lastmod = category.updatedAt ? new Date(category.updatedAt).toISOString().slice(0, 10) : lastmodIso;
+    const cf = sm.changefreq || 'weekly';
+    const pr = sm.priority != null ? String(sm.priority) : '0.7';
+    supported.forEach((locale) => {
+      const prefix = pathByLocale[locale] || '';
+      const loc = `${baseUrl}${prefix ? `/${prefix}` : ''}/categories/${encodeURIComponent(slug)}`;
+      const links = supported.map((locCode) => {
+        const p = pathByLocale[locCode] || '';
+        const href = `${baseUrl}${p ? `/${p}` : ''}/categories/${encodeURIComponent(slug)}`;
+        const hreflang = locCode === defaultLocale ? 'x-default' : locCode.replace('_', '-');
+        return `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(href)}"/>`;
+      });
+      urlEntries.push({ loc, lastmod, changefreq: cf, priority: pr, links });
     });
   });
 

@@ -6,6 +6,7 @@ const {
   getByDomain,
   getTop,
   getCategories,
+  getCategoryDetail,
   getSponsoredByDomain,
   getSimilarWithVotes,
   submitSimilarityVote,
@@ -24,6 +25,7 @@ const similarityVoteLimiter = rateLimit({
 });
 
 router.get('/categories', getCategories);
+router.get('/categories/:slug', getCategoryDetail);
 router.get('/top', getTop);
 router.get('/', list);
 router.get('/:domain/similar', getSimilarWithVotes);

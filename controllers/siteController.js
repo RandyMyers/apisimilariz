@@ -13,6 +13,20 @@ const SITE_I18N_NESTED = ['seo', 'similarPageSeo'];
 const SPONSORED_I18N_FIELDS = ['title', 'description', 'code'];
 const SPONSORED_I18N_NESTED = ['seo'];
 
+function applyCategoryI18n(category, locale) {
+  if (!category || !locale) return category ? { ...category, i18n: undefined } : category;
+  const localized = applyI18n(
+    category,
+    locale,
+    ['name', 'slug', 'description', 'intro', 'pageContent', 'imageAlt'],
+    ['seo']
+  );
+  const i18n = category.i18n || {};
+  const overrides = i18n[locale] || i18n[String(locale).split('-')[0]] || null;
+  if (overrides?.faqs && Array.isArray(overrides.faqs)) localized.faqs = overrides.faqs;
+  return { ...localized, i18n: undefined };
+}
+
 function clampInt(val, min, max, fallback) {
   const n = parseInt(val, 10);
   if (!Number.isFinite(n)) return fallback;
@@ -115,17 +129,70 @@ exports.getTop = asyncHandler(async (req, res) => {
 
 exports.getCategories = asyncHandler(async (req, res) => {
   const rows = await Category.find({ website: req.websiteId, active: true })
-    .select('name slug sortOrder')
+    .select('name slug sortOrder description image imageAlt intro pageContent faqs seo i18n updatedAt')
     .sort({ sortOrder: 1, name: 1 })
     .lean();
-  const data = rows.map((c) => ({
-    _id: c._id,
-    id: c._id,
-    name: c.name,
-    slug: c.slug,
-    sortOrder: c.sortOrder,
-  }));
+  const counts = await Promise.all(rows.map((c) => Site.countDocuments({ website: req.websiteId, category: c._id })));
+  const locale = req.locale || null;
+  const data = rows.map((c, index) => {
+    const base = applyCategoryI18n(c, locale);
+    return {
+      ...base,
+      _id: c._id,
+      id: c._id,
+      siteCount: counts[index],
+    };
+  });
   res.status(200).json({ success: true, data });
+});
+
+exports.getCategoryDetail = asyncHandler(async (req, res) => {
+  const rawSlug = decodeURIComponent(req.params.slug || '').trim();
+  if (!rawSlug) {
+    return res.status(404).json({ success: false, message: 'Category not found' });
+  }
+
+  const category = await Category.findOne({
+    website: req.websiteId,
+    active: true,
+    $or: [
+      { slug: rawSlug.toLowerCase() },
+      { name: new RegExp(`^${escapeRegex(rawSlug)}$`, 'i') },
+    ],
+  }).lean();
+
+  if (!category) {
+    return res.status(404).json({ success: false, message: 'Category not found' });
+  }
+
+  const page = clampInt(req.query.page, 1, 1000000, 1);
+  const limit = clampInt(req.query.limit, 1, 50, 50);
+  const skip = (page - 1) * limit;
+  const filter = { website: req.websiteId, category: category._id };
+  const [sitesRaw, total] = await Promise.all([
+    Site.find(filter)
+      .sort({ alternativeRank: 1, userScore: -1, similarityScore: -1, reviewCount: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Site.countDocuments(filter),
+  ]);
+  const sites = await attachCategoriesLean(sitesRaw);
+
+  const locale = req.locale || null;
+  const localizedCategory = applyCategoryI18n(category, locale);
+  const localizedSites = locale
+    ? sites.map((site) => applyI18n(site, locale, SITE_I18N_FIELDS, SITE_I18N_NESTED))
+    : sites.map((site) => ({ ...site, i18n: undefined }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      category: localizedCategory,
+      sites: localizedSites,
+    },
+    pagination: { page, limit, total },
+  });
 });
 
 exports.getSponsoredByDomain = asyncHandler(async (req, res) => {

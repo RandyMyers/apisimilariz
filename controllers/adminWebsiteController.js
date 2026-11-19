@@ -24,10 +24,12 @@ const normalizeBaseUrl = (url) => {
 };
 
 exports.create = asyncHandler(async (req, res) => {
-  const { name, slug, baseUrl, defaultLocale, supportedLocales, localePathMap } = req.body;
+  const { name, slug, baseUrl, defaultLocale, supportedLocales, localePathMap, adsStaticEnabled, adsManagedEnabled } = req.body;
   const website = await Website.create({
     name: (name || '').trim(),
     slug: (slug || '').trim().toLowerCase(),
+    ...(adsStaticEnabled !== undefined && { adsStaticEnabled: Boolean(adsStaticEnabled) }),
+    ...(adsManagedEnabled !== undefined && { adsManagedEnabled: Boolean(adsManagedEnabled) }),
     ...(baseUrl !== undefined && { baseUrl: normalizeBaseUrl(baseUrl) }),
     ...(defaultLocale !== undefined && { defaultLocale: String(defaultLocale).trim() || 'en-US' }),
     ...(supportedLocales !== undefined && {
@@ -60,10 +62,12 @@ exports.create = asyncHandler(async (req, res) => {
 });
 
 exports.update = asyncHandler(async (req, res) => {
-  const { name, slug, baseUrl, defaultLocale, supportedLocales, localePathMap } = req.body;
+  const { name, slug, baseUrl, defaultLocale, supportedLocales, localePathMap, adsStaticEnabled, adsManagedEnabled } = req.body;
   const updateFields = { updatedAt: new Date() };
   if (name !== undefined) updateFields.name = String(name).trim();
   if (slug !== undefined) updateFields.slug = String(slug).trim().toLowerCase();
+  if (adsStaticEnabled !== undefined) updateFields.adsStaticEnabled = Boolean(adsStaticEnabled);
+  if (adsManagedEnabled !== undefined) updateFields.adsManagedEnabled = Boolean(adsManagedEnabled);
   if (baseUrl !== undefined) updateFields.baseUrl = normalizeBaseUrl(baseUrl);
   if (defaultLocale !== undefined) updateFields.defaultLocale = String(defaultLocale).trim() || 'en-US';
   if (supportedLocales !== undefined)

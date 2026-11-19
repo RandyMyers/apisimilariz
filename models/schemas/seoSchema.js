@@ -10,6 +10,8 @@ const seoSchema = new mongoose.Schema(
     description: { type: String, trim: true, maxlength: 160 },
     /** Comma-separated; used for meta keywords where relevant */
     keywords: { type: String, trim: true, maxlength: 512 },
+    primaryKeyword: { type: String, trim: true, maxlength: 100, default: '' },
+    secondaryKeywords: { type: [String], default: [] },
     canonicalPath: { type: String, trim: true },
     robots: { type: String, trim: true, enum: ['', 'index,follow', 'noindex,follow', 'index,nofollow', 'noindex,nofollow'] },
     ogTitle: { type: String, trim: true, maxlength: 70 },
